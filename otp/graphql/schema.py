@@ -1,6 +1,6 @@
 import graphene
 
-from saleor.graphql.core.federation import build_federated_schema
+from graphene_federation import build_schema
 from otp.graphql.mutations import RequestPasswordRecovery, SetPasswordByCode
 
 
@@ -9,4 +9,4 @@ class Mutation(graphene.ObjectType):
     set_password_by_code = SetPasswordByCode.Field()
 
 
-schema = build_federated_schema(mutation=Mutation)
+schema = build_schema(mutation=Mutation)

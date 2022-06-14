@@ -4,7 +4,7 @@ import django.db.models.deletion
 from django.conf import settings
 from django.db import migrations, models
 
-import saleor.plugins.otp.models
+from ..models import generate_otp
 
 
 class Migration(migrations.Migration):
@@ -30,9 +30,7 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "code",
-                    models.CharField(
-                        default=saleor.plugins.otp.models.generate_otp, max_length=6
-                    ),
+                    models.CharField(default=generate_otp, max_length=6),
                 ),
                 ("issued_at", models.DateTimeField(auto_now_add=True)),
                 ("is_used", models.BooleanField(default=False)),

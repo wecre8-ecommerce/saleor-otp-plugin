@@ -1,7 +1,7 @@
 import graphene
-
 from graphene_federation import build_schema
-from otp.graphql.mutations import RequestPasswordRecovery, SetPasswordByCode
+
+from .mutations import RequestPasswordRecovery, SetPasswordByCode
 
 
 class Mutation(graphene.ObjectType):

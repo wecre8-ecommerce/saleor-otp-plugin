@@ -5,19 +5,21 @@ from urllib.parse import urlencode, urlparse
 import graphene
 from django.contrib.auth import get_user_model, password_validation
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
+from django.middleware.csrf import _get_new_csrf_token
 from django.utils import timezone
 
-from saleor.account import events as account_events
-from saleor.account.notifications import get_default_user_payload
-from saleor.core.notification.utils import get_site_context
-from saleor.core.notify_events import NotifyEventType
-from saleor.core.utils.url import validate_storefront_url
-from saleor.graphql.account.mutations.authentication import CreateToken
-from saleor.graphql.channel.utils import clean_channel, validate_channel
-from saleor.graphql.core.mutations import BaseMutation
-from saleor.graphql.core.types.common import Error
-from otp.models import OTP
-from otp.graphql.enums import OTPErrorCode, OTPErrorCodeType
+from saleor.core.jwt import create_access_token, create_refresh_token
+
+from ....account import events as account_events
+from ....account.notifications import get_default_user_payload
+from ....core.notification.utils import get_site_context
+from ....core.notify_events import NotifyEventType
+from ....core.utils.url import validate_storefront_url
+from ....graphql.channel.utils import clean_channel, validate_channel
+from ....graphql.core.mutations import BaseMutation
+from ....graphql.core.types.common import Error
+from ..models import OTP
+from .enums import OTPErrorCode, OTPErrorCodeType
 
 User = get_user_model()
 
@@ -55,6 +57,84 @@ def send_password_reset_notification(
         else NotifyEventType.ACCOUNT_PASSWORD_RESET
     )
     manager.notify(event, payload=payload, channel_slug=channel_slug)
+
+
+class CreateTokenExtended(BaseMutation):
+    """Mutation that authenticates a user and returns token and user data."""
+
+    class Arguments:
+        email = graphene.String(required=True, description="Email of a user.")
+        password = graphene.String(required=True, description="Password of a user.")
+
+    class Meta:
+        description = "Create JWT token."
+        error_type_class = OTPError
+
+    token = graphene.String(description="JWT token, required to authenticate.")
+    refresh_token = graphene.String(
+        description="JWT refresh token, required to re-generate access token."
+    )
+    csrf_token = graphene.String(
+        description="CSRF token required to re-generate access token."
+    )
+
+    @classmethod
+    def _retrieve_user_from_credentials(cls, email, password) -> Optional[User]:
+        user = User.objects.filter(email=email).first()
+        if user and user.check_password(password):
+            return user
+        return None
+
+    @classmethod
+    def get_user(cls, _info, data):
+        user = cls._retrieve_user_from_credentials(data["email"], data["password"])
+        if not user:
+            raise ValidationError(
+                {
+                    "email": ValidationError(
+                        "Please, enter valid credentials",
+                        code=OTPErrorCode.USER_NOT_FOUND,
+                    )
+                }
+            )
+        if not user.is_active and not user.last_login:
+            raise ValidationError(
+                {
+                    "email": ValidationError(
+                        "Account needs to be confirmed via email.",
+                        code=OTPErrorCode.USER_NOT_FOUND,
+                    )
+                }
+            )
+
+        if not user.is_active and user.last_login:
+            raise ValidationError(
+                {
+                    "email": ValidationError(
+                        "Account inactive.",
+                        code=OTPErrorCode.USER_NOT_FOUND,
+                    )
+                }
+            )
+        return user
+
+    @classmethod
+    def perform_mutation(cls, root, info, **data):
+        user = cls.get_user(info, data)
+        access_token = create_access_token(user)
+        csrf_token = _get_new_csrf_token()
+        refresh_token = create_refresh_token(user, {"csrfToken": csrf_token})
+        info.context.refresh_token = refresh_token
+        info.context._cached_user = user
+        user.last_login = timezone.now()
+        user.save(update_fields=["last_login"])
+        return cls(
+            errors=[],
+            user=user,
+            token=access_token,
+            refresh_token=refresh_token,
+            csrf_token=csrf_token,
+        )
 
 
 class RequestPasswordRecovery(BaseMutation):
@@ -121,7 +201,7 @@ class RequestPasswordRecovery(BaseMutation):
         return RequestPasswordRecovery()
 
 
-class SetPasswordByCode(CreateToken):
+class SetPasswordByCode(CreateTokenExtended):
     class Arguments:
         code = graphene.String(
             description="An OTP required to set the password.", required=True

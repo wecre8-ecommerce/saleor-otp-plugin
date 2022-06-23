@@ -10,14 +10,14 @@ from django.utils import timezone
 
 from saleor.core.jwt import create_access_token, create_refresh_token
 
-from ....account import events as account_events
-from ....account.notifications import get_default_user_payload
-from ....core.notification.utils import get_site_context
-from ....core.notify_events import NotifyEventType
-from ....core.utils.url import validate_storefront_url
-from ....graphql.channel.utils import clean_channel, validate_channel
-from ....graphql.core.mutations import BaseMutation
-from ....graphql.core.types.common import Error
+from saleor.account import events as account_events
+from saleor.account.notifications import get_default_user_payload
+from saleor.core.notification.utils import get_site_context
+from saleor.core.notify_events import NotifyEventType
+from saleor.core.utils.url import validate_storefront_url
+from saleor.graphql.channel.utils import clean_channel, validate_channel
+from saleor.graphql.core.mutations import BaseMutation
+from saleor.graphql.core.types.common import Error
 from ..models import OTP
 from .enums import OTPErrorCode, OTPErrorCodeType
 
